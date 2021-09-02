@@ -142,9 +142,9 @@ batch_day <- orders_day %>%
 # heuristics are selected with each iteration with a weighted random seleciton criterion called roulette wheel method
 
 
+x <- new_batch_day
 
 ### heuristics
-source("code/heuristics.R")
 
 # 3 move batches
 ## move one batch to another picker
@@ -176,8 +176,7 @@ phi <- 0.999995
 
 
 # no of heuristics used
-n_heuristics <- 1
-n_iter <- 2000
+n_heuristics <- 2
 
 
 # weights of heuristics w
@@ -215,12 +214,18 @@ f_s <- predict(full_model, s) %>%  exp %>% sum
 temp <- -0.03*f_s/log(0.5)
 
 
-heuristics <- c(heuristic3, heuristic4, heuristic5)
+source("code/heuristics.R")
+
+heuristics <- c(heuristic3, heuristic5)
 
 i <-1
 #######################
 # the algo
 ####################
+
+n_iter <- 2000
+
+
 for(it in 1:n_iter){
   
 print(it)
@@ -235,7 +240,7 @@ probs <-  ws/sum(ws)
 # draw one of the heuristics for current iteration
 h <- sample(1:n_heuristics, size=1, prob=probs)
 
-# print(paste("heuristic ", h+ 2))
+print(paste("heuristic ", h+ 2))
 
 h_fun <- heuristics[[h]]
 

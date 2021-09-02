@@ -25,13 +25,12 @@ heuristic3 <- function(x) {
 
 
 
-
 # move all batches from a single picker to other workers
 # first, the picker is selected randomly from all pickers with batches, then each of the selected picker's batches is assigned
 # to other pickers with a greedy heuristic (???)
 heuristic4 <- function(x) {
   
-  empty_picker_batches <- filter(x, picker_id == sample(picker_id, size=1)) # choose one picker randomly
+  empty_picker_batches <- x %>% sample_n(1) # choose one picker randomly
   day_pickers <- unique(x$picker_id) 
   #day_pickers <-  day_pickers[!day_pickers %in% empty_picker_batches$picker_id[1]] # delete picker from picker pool
   
@@ -64,15 +63,19 @@ heuristic5 <- function(x) {
   
   # forecast execution times for every remaining picker
   day_pickers <- unique(x$picker_id)   
-  fastest <- sapply(day_pickers, function(p) predict(mmodel, x %>% mutate(picker_id = p))) %>% 
+  fastest <- sapply(day_pickers, function(p) predict(full_model, x %>% mutate(picker_id = p))) %>% 
     colSums %>% as_tibble %>% 
     mutate(picker_id = day_pickers) %>% 
-    arrange(value)
+    arrange((value))
   
   #give batches of random picker to fastest picker
-  random_picker_batches %>% 
+ x_new <-  random_picker_batches %>% 
     mutate(picker_id = fastest$picker_id[1])
-}
+ 
+ rows_update(x, x_new)
+ 
+ 
+ }
  
   
   
