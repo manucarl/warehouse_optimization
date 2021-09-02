@@ -175,9 +175,12 @@ delta <- 91 # every delta iterations scores are updated, weights are set to zero
 phi <- 0.999995
 
 
-# no of heuristics used
-n_heuristics <- 2
 
+source("code/heuristics.R")
+
+heuristics <- c(heuristic3, heuristic4, heuristic5)
+# no of heuristics used
+n_heuristics <- length(heuristics)
 
 # weights of heuristics w
 # every heuristic has a weight that is influences the probability of being chosen in each iteration
@@ -196,12 +199,13 @@ phis <- phi_mat[1,]
 
 # at each iteration temperature T is updated by T <- phi * T, where T is the temperature variable and phi the cooling coefficient
 
-
-#at the beginning the current solution is the best solution
+# first free at the beginning
 new_batch_day <- batch_day
 
 new_batch_day$picker_id <- sample(picker_days[[1]], nrow(new_batch_day), replace=T)
 
+
+#at the beginning the current solution is the best solution
 s_star <- s <- new_batch_day
 
 #cost of best solution
@@ -211,19 +215,16 @@ f_s_star <- predict(full_model, s_star) %>% exp %>% sum
 
 # cost of current solution
 f_s <- predict(full_model, s) %>%  exp %>% sum
-temp <- -0.03*f_s/log(0.5)
+temp <- -0.03 * f_s/log(0.5)
 
 
-source("code/heuristics.R")
-
-heuristics <- c(heuristic3, heuristic5)
 
 i <-1
 #######################
 # the algo
 ####################
 
-n_iter <- 2000
+n_iter <- 200
 
 
 for(it in 1:n_iter){
@@ -245,7 +246,7 @@ print(paste("heuristic ", h+ 2))
 h_fun <- heuristics[[h]]
 
 
-
+print(nrow(s))
 # new solution via application of chosen heuristic
 s_prime <- h_fun(s)
 
@@ -272,7 +273,7 @@ if(f_s_prime < f_s_star){
   
   rho <- rho2
   
-} else if(Q <= exp((f_s_prime - f_s)/ temp)){
+}else if(Q <= exp((f_s_prime - f_s)/ temp)){
   
   print("case 3")
   
@@ -281,10 +282,13 @@ if(f_s_prime < f_s_star){
   rho <- rho3
 }
 
-if(it %% delta == 0)  phis[h] <- phis[h] + rho
+if(it %% delta == 0)  {
+  phis[h] <- phis[h] + rho
 
+
+phis[h] <- 0 
+}
 ws[h] <- lambda*ws[h] + (1-lambda)*phis[h]
-
 
 temp <- phi*temp
 
