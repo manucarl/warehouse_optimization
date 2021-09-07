@@ -67,3 +67,21 @@ batch_data_clean %>% ungroup %>%
   mutate_if(is.factor, as.numeric) %>%
   cor %>% 
   corrplot::corrplot(method="number", type="upper")
+
+
+
+
+
+batch_data_final %>% 
+  ggplot + geom_boxplot(aes(y=batch_time, group=picker_id %>% as.numeric))
+
+batch_data_final %>% 
+  filter(picker_id %in% sample(picker_id, 20)) %>% 
+  group_by(picker_id) %>% 
+  # slice_sample(n=5) %>% 
+  ggplot(aes(x = log_mass , y = log_batch_time, group = picker_id)) +
+  geom_point(color = "cadetblue4", alpha = 0.80) +
+  geom_smooth(method = 'lm', se = FALSE, color = "black") +
+  facet_wrap(~picker_id)
+
+batch_data_final %>% group_by(picker_id) %>% summarize(mean = mean(batch_time))

@@ -17,23 +17,9 @@ full_model <- lmer(log_batch_time ~ 1+ log_nlines + log_plevel + log_volume + lo
 
 summary(full_model)
 
-batch_data_final %>% 
-  ggplot + geom_boxplot(aes(y=batch_time, group=picker_id %>% as.numeric))
-
-batch_data_final %>% 
-  filter(picker_id %in% sample(picker_id, 20)) %>% 
-  group_by(picker_id) %>% 
-  # slice_sample(n=5) %>% 
-  ggplot(aes(x = log_mass , y = log_batch_time, group = picker_id)) +
-  geom_point(color = "cadetblue4", alpha = 0.80) +
-  geom_smooth(method = 'lm', se = FALSE, color = "black") +
-  facet_wrap(~picker_id)
-
-batch_data_final %>% group_by(picker_id) %>% summarize(mean = mean(batch_time))
-
 # save(full_model, file="models/full_model_all_log.RData")
+set.seed(42)
 
-# load("models/full_model_all_log.RData")
 # number of partitions/ virtual days
 n_part <- 12
 # construct virtual days
@@ -52,98 +38,59 @@ M_max <- 9.5*60
 
 # M_min <- 7.4*3600
 # M_max <- 7.75*3600
-d <- 2
+partition_index <- 1
 
 # get eligible pickers for each day
-picker_days <- sapply(1:n_part, function(d) {
+picker_days <- sapply(1:n_part, function(partition_index) {
   
-  day <- batch_data_final  %>% 
-    slice(partitions[[d]]) # filter picks of each day
+  # batches of the day
+  batches_of_the_day <- batch_data_final  %>% 
+    slice(partitions[[partition_index]]) # filter picks of each day
   
+  predictions <- predict(full_model, batches_of_the_day)
+
+  batches_of_the_day <- tibble(batches_of_the_day, pred= predictions %>% exp)
   
-  predictions <- predict(full_model, day)
-  # pred <- 0
-  # resids <- day$log_batch_time - pred
-  
-  # pred_corr <- exp(pred)* mean(exp(resids))
-  
-  day <- tibble(day, pred= predictions %>% exp)
-  
-  day_agg <- day %>% 
+  # aggregate predicted and real execution times for each picker involved in the day
+  day_agg <- batches_of_the_day %>% 
     group_by(picker_id) %>% 
     summarise(total_secs = sum(batch_time), 
-              total_pred_secs = sum(pred))# %>%
+              total_pred_secs = sum(pred))
   
+  # keep only those pickers that satisfy the time conditions
   day_keep <- day_agg %>% filter(total_secs > M_min, total_secs < M_max,
                                  total_pred_secs > M_min, total_pred_secs < M_max)
   
-  # left_join(day_keep, picker_productivity) %>% 
-  #   arrange(desc(productivity))
   day_keep$picker_id
   
   
 })
 
+order_data <- all_data %>%
+  gen_order_data %>% 
+  rename()
 
-# orders of a day
-# first day:
-day <- 2
-
-orders_day <- left_join(
-  batch_data_final %>% 
-    slice(partitions[[day]]) %>% 
-    select(batch_id),
-  all_data %>% 
-    gen_order_data %>% 
-    filter(house <46)
-) %>% 
-  arrange(desc(rack)) %>% 
-  filter(rack > 0) %>% 
-  mutate(#pick_end = lubridate::period_to_seconds(lubridate::hms(ANFAHR_ZEIT)),
-         #pick_start = lubridate::period_to_seconds(lubridate::hms(BEGINN_ZEIT)),
-         rack = as.numeric(rack)) %>% 
-  select(batch_id, order_id, picker_id, mass:line)
-
-orders_day %>% group_by(order_id) %>% group_indices
+day <- 1
 
 
+# use only batches of the day and ??? pickers that are eligible
+batches_of_the_day <- batch_data_final %>%
+  slice(partitions[[day]])
+# %>% 
+#   filter(picker_id %in% picker_days[[day]])
+
+orders_of_the_day <- order_data %>% 
+  filter(batch_id %in% batches_of_the_day$batch_id) %>% 
+  rename(plevel = pick_level) %>% 
+  select(batch_id, order_id, picker_id, volume, mass, rack)
+
+pickers_of_the_day <- picker_days[[day]]
 # maximum number of orders per batch
-N <- 7
+N <- 50
 
-orders_day <- orders_day %>% 
-  group_by(batch_id) %>% 
-  sample_n(sample(2:N, size=1))
-
-# randomly sample n orders
-# order_sample <- orders_day %>% 
+# orders_of_the_day <- orders_of_the_day %>% 
 #   group_by(batch_id) %>% 
-#   sample_n(5) %>% 
-#   select(order_id, batch_id, rack:line, mass)
-# 
-
-
-
-batch_day <- orders_day %>% 
-  group_by(batch_id) %>%
-  summarise(
-    no_of_lines =n(),
-    travel_dist_meter = 2 * rack_distance * max(rack %>% as.numeric),
-    mean_pick_level = mean(as.numeric(pick_level)),
-    total_volume = sum(volume/10e8),
-    total_mass_kg = sum(mass/1000)
-  ) %>% 
-  ungroup %>% 
-  arrange(desc(no_of_lines)) %>% 
-  mutate(
-    log_nlines = log(no_of_lines),
-    log_distance = log(travel_dist_meter ),
-    log_plevel = log(mean_pick_level),
-    log_volume = log(total_volume),
-    log_mass = log(total_mass_kg)
-  ) %>% 
-  drop_na 
-
-
+#   sample_n(sample( 2:N , size=1)) 
 
 # 5 different heuristics
 # each heuristics is composed of a destroy and repair method
@@ -191,7 +138,7 @@ source("code/heuristics.R")
 heuristics <- c(heuristic1, heuristic3, heuristic4, heuristic5)
 
 
-heuristics <- c(heuristic1)
+heuristics <- c(heuristic3)
 
 # no of heuristics used
 n_heuristics <- length(heuristics)
@@ -218,19 +165,12 @@ phis <- phi_mat[1,]
 # at each iteration temperature T is updated by T <- phi * T, where T is the temperature variable and phi the cooling coefficient
 
 
-batch_day <- batch_data_final %>% 
-  slice(partitions[[day]]) %>% 
-  filter(picker_id %in% picker_days[[1]])
-
-predict(full_model, batch_day) %>% exp %>% sum
 # first free at the beginning
-new_batch_day <- batch_day #%>% sample_n(685)
-
 # new_batch_day$picker_id <- sample(picker_days[[day]], nrow(new_batch_day), replace=T)
 
-
+allow_new_levels <- F
 #at the beginning the current solution is the best solution
-s_star <- s <- batch_day
+s_star <- s <- batches_of_the_day
 
 #cost of best solution
 f_s_star <- predict(full_model, s_star) %>% exp %>% sum
@@ -242,29 +182,27 @@ f_s <- predict(full_model, s) %>%  exp %>% sum
 temp <- -0.03 * f_s/log(0.5)
 
 
-
 it <- 1
 #######################
 # the algo
 ####################
-
 
 new_batch_counter <- 0
 
 for(it in 1:n_iter){
   
 
-  f_s_star <- predict(full_model, s_star) %>% exp %>% sum
+  f_s_star <- predict(full_model, s_star, allow.new.levels = allow_new_levels) %>% exp %>% sum
   
-  f_s <- predict(full_model, s) %>%  exp %>% sum
+  f_s <- predict(full_model, s, allow.new.levels = allow_new_levels) %>%  exp %>% sum
   
 # probabilities of choosing each heuristic
 probs <-  ws/sum(ws)
 
 # draw one of the heuristics for current iteration
 h <- sample(1:n_heuristics, size=1, prob=probs)
-
-# print(paste("heuristic ", h+ 2))
+# 
+# print(paste("heuristic ", h ))
 
 h_fun <- heuristics[[h]]
 
@@ -272,7 +210,7 @@ h_fun <- heuristics[[h]]
 s_prime <- h_fun(s)
 
 # cost of new solution
-f_s_prime <- predict(full_model, s_prime) %>% exp %>% sum
+f_s_prime <- predict(full_model, s_prime, allow.new.levels = allow_new_levels) %>% exp %>% sum
 
 
 # print(c("f_s_prime" = f_s_prime, "f_s" = f_s, "f_s_star"= f_s_star))
@@ -281,14 +219,14 @@ Q <- runif(1)
 
 if(f_s_prime < f_s_star){
     
-  print("case 1")
+  # print("case 1")
   s_star <- s <-  s_prime
 
   rho <- rho1
   
 } else if(f_s_prime < f_s){
   
-  print("case 2")
+  # print("case 2")
   
   s <- s_prime
   
@@ -296,7 +234,7 @@ if(f_s_prime < f_s_star){
   
 }else if(Q <= exp((f_s_prime - f_s)/ temp)){
   
-  print("case 3")
+  # print("case 3")
   
   s <- s_prime
 
@@ -314,11 +252,10 @@ ws[h] <- lambda*ws[h] + (1-lambda)*phis[h]
 
 temp <- phi*temp
 
-print(tail(s))
 }
 
 f_s_star /
-predict(full_model, batch_day) %>% exp %>% sum
+predict(full_model, batches_of_the_day) %>% exp %>% sum
 # heuristic3(batch_day)
 # 
 # sum(predict(mmodel, heuristic3(batch_day)))

@@ -27,37 +27,43 @@ sample.vec <- function(x, ...) x[sample(length(x), ...)]
 
 heuristic1 <- function(x){
   
-  Q <- sample(2:7, size = 1)
+  batch_sample <- sample(2:7, size = 1)
   # print(paste0("Q: ", Q))
   # batches to be destroyed
-  batches_to_be_destroyed <- x %>% sample_n(size = Q)
+  batches_to_be_destroyed <- sample(x$batch_id, size = batch_sample)
   
   # print(paste0("batches destroyed: ", batches_to_be_destroyed$batch_id))
   # associated orders
   
   # problem starts probably when only new batches are there
-  Od <- orders_day %>% filter(batch_id %in% batches_to_be_destroyed$batch_id) %>% ungroup
+  Od <- orders_of_the_day %>% filter(batch_id %in% batches_to_be_destroyed) %>% ungroup
 
-  print(paste0("Od: ", Od$order_id))
   # pickers currently assigned to Od
   Wd <- Od$picker_id %>%  unique 
-  Wd <-
-  print(paste0("currently assigned picker", Wd))
   new_batches <- list()
+  
   i <- 1
   # randomly choose orders (size and orders are random)
   # sampleOd$order_id
   while(nrow(Od) >= 1){
     new_batch_counter <<- new_batch_counter + 1
+    # randomly choose orders (size and orders are random) from Od
     new_batches[[i]] <- Od %>% sample_n(size=sample(1:nrow(Od), 1))  %>% mutate(batch_id = new_batch_counter)
     Od <- Od[!Od$order_id %in% new_batches[[i]]$order_id,]
 
     i <- i + 1
   }
   
-  print(new_batches)
+  new_orders <- bind_rows(new_batches)  
+  
+  # orders_of_the_day %>% distinct() %>% 
+  #   rows_update(new_orders, by = "order_id") %>% 
+  #   right_join(orders_of_the_day %>% select(order_id), by = "order_id")
+    
+  orders_of_the_day <<- orders_of_the_day %>% filter(batch_id %in% batches_to_be_destroyed) 
+
   # aggregate new batches
-  new_part <- bind_rows(new_batches) %>%
+  new_part <- new_orders %>%
     group_by(batch_id) %>%
     summarise(
       nlines =n(),
@@ -85,16 +91,23 @@ heuristic1 <- function(x){
 # probably one batch per picker is moved to another picker
 heuristic3 <- function(x) {
   
+  # sample random set of batches from various pickers
   xnew <- x %>%
     group_by(picker_id) %>% 
     sample_n(1) %>% 
-    ungroup
+    ungroup 
+    
+  shuffled_pickers <-  sample.vec(pickers_of_the_day, size=nrow(xnew), replace = T)
+
   
-  xnew$picker_id <- xnew$picker_id[sample(nrow(xnew))]
-
-
-  rows_update(x, xnew)
-
+  length(shuffled_pickers) %>% print
+  length(x$batch_id %in% xnew$batch_id) %>% sum %>% print
+  
+  x %>% mutate(picker_id = replace(picker_id, batch_id %in% xnew$batch_id, shuffled_pickers))
+  
+   # x %>% distinct() %>% 
+   #  rows_update(xnew, by = "batch_id") %>% 
+   #  right_join(x %>% select(x), by = "batch_id")
 }
 
 
@@ -104,7 +117,7 @@ heuristic3 <- function(x) {
 # first, the picker is selected randomly from all pickers with batches, then each of the selected picker's batches is assigned
 # to other pickers with a greedy heuristic (???)
 heuristic4 <- function(x) {
-  
+  pickers <- x$picker_id %>% unique
   chosen_picker <- sample(x$picker_id, 1) # choose one picker randomly
   day_pickers <- pickers[!pickers %in% chosen_picker]
 
@@ -128,6 +141,10 @@ heuristic4 <- function(x) {
   }
   # print(batches, n= nrow(batches))
   rows_update(x, batches)
+  
+  # x %>% distinct() %>% 
+  #   rows_update(batches, by = "batch_id") %>% 
+  #   right_join(x %>% select(x), by = "batch_id")
   # tibble(new_batch, forecast= predict(mmodel, newdata=new_batch))
 }
 
@@ -136,22 +153,20 @@ heuristic4 <- function(x) {
 
 # moves all batches from one random picker to the picker that executes them the fastest (what happens to batches of this picker?)
 heuristic5 <- function(x) {
-  random_picker_batches <- filter(x, picker_id == sample(picker_id, size=1)) # choose one picker randomly
   
+  # picker of which batches are reassigned
+  chosen_picker <- sample(x$picker_id, size = 1)
+  
+
   # forecast execution times for every remaining picker
-  day_pickers <- unique(x$picker_id)   
-  fastest <- sapply(day_pickers, function(p) predict(full_model, x %>% mutate(picker_id = p))) %>% 
+  fastest <- sapply(pickers_of_the_day, function(p) predict(full_model, x %>% mutate(picker_id = p))) %>% 
     colSums %>% as_tibble %>% 
-    mutate(picker_id = day_pickers) %>% 
+    mutate(picker_id = pickers_of_the_day) %>% 
     arrange((value))
   
   #give batches of random picker to fastest picker
- x_new <-  random_picker_batches %>% 
-    mutate(picker_id = fastest$picker_id[1])
- 
- rows_update(x, x_new)
- 
- 
+  x$picker_id[x$picker_id %in% chosen_picker] <- as.numeric(fastest[1,1])
+  x
  }
  
   
