@@ -87,7 +87,7 @@ picker_days <- sapply(1:n_part, function(d) {
 
 # orders of a day
 # first day:
-day <- 1
+day <- 2
 
 orders_day <- left_join(
   batch_data_final %>% 
@@ -99,16 +99,27 @@ orders_day <- left_join(
 ) %>% 
   arrange(desc(rack)) %>% 
   filter(rack > 0) %>% 
-  mutate(pick_end = lubridate::period_to_seconds(lubridate::hms(ANFAHR_ZEIT)),
-         pick_start = lubridate::period_to_seconds(lubridate::hms(BEGINN_ZEIT)),
-         rack = as.numeric(rack))
+  mutate(#pick_end = lubridate::period_to_seconds(lubridate::hms(ANFAHR_ZEIT)),
+         #pick_start = lubridate::period_to_seconds(lubridate::hms(BEGINN_ZEIT)),
+         rack = as.numeric(rack)) %>% 
+  select(batch_id, order_id, picker_id, mass:line)
 
+orders_day %>% group_by(order_id) %>% group_indices
+
+
+# maximum number of orders per batch
+N <- 7
+
+orders_day <- orders_day %>% 
+  group_by(batch_id) %>% 
+  sample_n(sample(2:N, size=1))
 
 # randomly sample n orders
-order_sample <- orders_day %>% 
-  sample_n(200) %>% 
-  select(order_id, batch_id, rack:line, mass)
-
+# order_sample <- orders_day %>% 
+#   group_by(batch_id) %>% 
+#   sample_n(5) %>% 
+#   select(order_id, batch_id, rack:line, mass)
+# 
 
 
 
@@ -142,7 +153,6 @@ batch_day <- orders_day %>%
 # heuristics are selected with each iteration with a weighted random seleciton criterion called roulette wheel method
 
 
-x <- new_batch_day
 
 ### heuristics
 
@@ -178,9 +188,17 @@ phi <- 0.999995
 
 source("code/heuristics.R")
 
-heuristics <- c(heuristic3, heuristic4, heuristic5)
+heuristics <- c(heuristic1, heuristic3, heuristic4, heuristic5)
+
+
+heuristics <- c(heuristic1)
+
 # no of heuristics used
 n_heuristics <- length(heuristics)
+
+
+
+n_iter <- 200
 
 # weights of heuristics w
 # every heuristic has a weight that is influences the probability of being chosen in each iteration
@@ -199,14 +217,20 @@ phis <- phi_mat[1,]
 
 # at each iteration temperature T is updated by T <- phi * T, where T is the temperature variable and phi the cooling coefficient
 
-# first free at the beginning
-new_batch_day <- batch_day
 
-new_batch_day$picker_id <- sample(picker_days[[1]], nrow(new_batch_day), replace=T)
+batch_day <- batch_data_final %>% 
+  slice(partitions[[day]]) %>% 
+  filter(picker_id %in% picker_days[[1]])
+
+predict(full_model, batch_day) %>% exp %>% sum
+# first free at the beginning
+new_batch_day <- batch_day #%>% sample_n(685)
+
+# new_batch_day$picker_id <- sample(picker_days[[day]], nrow(new_batch_day), replace=T)
 
 
 #at the beginning the current solution is the best solution
-s_star <- s <- new_batch_day
+s_star <- s <- batch_day
 
 #cost of best solution
 f_s_star <- predict(full_model, s_star) %>% exp %>% sum
@@ -219,17 +243,16 @@ temp <- -0.03 * f_s/log(0.5)
 
 
 
-i <-1
+it <- 1
 #######################
 # the algo
 ####################
 
-n_iter <- 200
 
+new_batch_counter <- 0
 
 for(it in 1:n_iter){
   
-print(it)
 
   f_s_star <- predict(full_model, s_star) %>% exp %>% sum
   
@@ -241,12 +264,10 @@ probs <-  ws/sum(ws)
 # draw one of the heuristics for current iteration
 h <- sample(1:n_heuristics, size=1, prob=probs)
 
-print(paste("heuristic ", h+ 2))
+# print(paste("heuristic ", h+ 2))
 
 h_fun <- heuristics[[h]]
 
-
-print(nrow(s))
 # new solution via application of chosen heuristic
 s_prime <- h_fun(s)
 
@@ -254,7 +275,7 @@ s_prime <- h_fun(s)
 f_s_prime <- predict(full_model, s_prime) %>% exp %>% sum
 
 
-print(c("f_s_prime" = f_s_prime, "f_s" = f_s, "f_s_star"= f_s_star))
+# print(c("f_s_prime" = f_s_prime, "f_s" = f_s, "f_s_star"= f_s_star))
 
 Q <- runif(1)
 
@@ -282,9 +303,10 @@ if(f_s_prime < f_s_star){
   rho <- rho3
 }
 
-if(it %% delta == 0)  {
-  phis[h] <- phis[h] + rho
+phis[h] <- phis[h] + rho
 
+if(it %% delta == 0)  {
+  
 
 phis[h] <- 0 
 }
@@ -292,8 +314,11 @@ ws[h] <- lambda*ws[h] + (1-lambda)*phis[h]
 
 temp <- phi*temp
 
-
+print(tail(s))
 }
+
+f_s_star /
+predict(full_model, batch_day) %>% exp %>% sum
 # heuristic3(batch_day)
 # 
 # sum(predict(mmodel, heuristic3(batch_day)))
@@ -306,6 +331,8 @@ temp <- phi*temp
 # 
 # sum(predict(mmodel, heuristic4(batch_day)))
 # sum(predict(mmodel, batch_day))
+(batch_data_final$picker_id %>%  unique) %in%
+(s_prime$picker_id %>%  unique)
 
 
 

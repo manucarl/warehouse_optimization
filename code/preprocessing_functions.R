@@ -1,5 +1,9 @@
 
-# select, prepare, generate and rename variables on order level
+#-------------------------------------------------------------------------------------
+# data transformation - from order to batch level
+#-------------------------------------------------------------------------------------
+
+# 1) select, generate and mutate variables into desired form
 gen_order_data <- function(data){
   data %>% 
     dplyr::select(LFDNR,AUFTRAGSNR,MDENR, ANFAHR_ZEIT, BEGINN_ZEIT, mass, MENGE_IST, volume, pick_level, area, rack, place, house, line) %>%
@@ -12,29 +16,17 @@ gen_order_data <- function(data){
            order_id = LFDNR)
 }
 
+# order_data <- all_data %>% gen_order_data
 
-
-# summarise orders on batch level 
-gen_batch_data <- function(data, rack_distance = 10){
-  
+# 2) summarise orders on batch level and generate 
+gen_batch_data <- function(data, rack_distance = rack_distance){
   data %>% 
-    # pick_level = ifelse(pick_level %in% c("01", "03", "05"), 1, 2)) %>%
     group_by(picker_id, batch_id) %>%
-    # group_by(picker_id, AUFTRAGSNR ) %>% 
-    # mutate(true_start = ifelse(MENGE_IST != 0, min(pick_start, na.rm=TRUE), Inf)) %>% # set BEGINN_ZEIT to Inf instead of start of shift effectively excluding it
-    # mutate(
-    #   batch_time_secs = (pick_end)- (pick_start),
-    #   batch_time_mins = batch_time_secs/60,
-    #   # no_of_lines = length(unique(as.numeric(place))),
-    #   ) %>%
     summarise(
       batch_time_secs = (max(pick_end)-min(pick_start)),
-      # batch_time_secs = sum(pick_end-pick_start),
       
-      # no_of_lines =n_distinct(house),
       no_of_lines =n(),
-      # travel_dist_meter = sum(travel_dist_house+travel_dist_rack),
-      travel_dist_meter = 2 * rack_distance * max(rack %>% as.numeric),
+      travel_dist_meter = 2 * rack_distance * max(rack %>% as.numeric), # !!!! uses simplest heuristic for routing / distance calculation !!!!!
       mean_pick_level = mean(as.numeric(pick_level)),
       total_volume = sum(volume),
       total_mass_kg = sum(mass/1000)
@@ -42,27 +34,29 @@ gen_batch_data <- function(data, rack_distance = 10){
     ungroup
 }
 
+# batch_data <- order_data %>% gen_batch_data
 
 
-# filter peculiar observations
-clean_batch_data <- function(data) {
+# 3) filter peculiar observations
+clean_batch_data <- function(data, min_order_number_per_picker = 75) {
   data %>% 
     filter(
       batch_time_secs > 300, 
       batch_time_secs <7200,
-      travel_dist_meter >= 10, # delete too short distance (naive calculation: one rack has 42 places when you pass both directions => 42*1.4 * 2 =  117.6m)
       mean_pick_level > 0, # not clear what pick_level = 0 is
       total_mass_kg <3000, 
-      no_of_lines > 20) %>% 
-    # total_volume < 15  ) %>% 
+      no_of_lines > 20
+    ) %>% 
     group_by(picker_id) %>% 
-    filter(n() > 75) %>% # matusiak et al. use only pickers who worked at least 75 batches (for cv)
+    filter(n() > min_order_number_per_picker) %>% # matusiak et al. use only pickers who worked at least 75 batches (for cv)
     ungroup %>% 
     drop_na
 }
 
+# batch_data_clean <- batch_data %>% clean_batch_data
 
-# rescaling and renaming
+# 4) rescaling and renaming
+
 rescale_rename_data <- function(data) {
   
   data %>% 
@@ -84,6 +78,4 @@ rescale_rename_data <- function(data) {
     dplyr::select(batch_id, picker_id, batch_time, nlines, plevel:mass, -travel_dist_meter, distance, log_batch_time:log_mass)
 }
 
-
-get_batch_data <- function(data) data %>% gen_order_data %>% clean_batch_data %>% rescale_rename_data
 

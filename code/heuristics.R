@@ -1,7 +1,6 @@
 
 # currently only heuristics 3-5 that leave batches intact!
-
-pickers <- picker_days[[1]]
+rack_distance  <- 10
 # BatchGAP
 # goal minimize total execution time (cost) under the constraints
 # 1. each batch is picked at most once
@@ -9,6 +8,77 @@ pickers <- picker_days[[1]]
 # 3. no more than N orders are contained in any one batch (not enforced?)
 # 4. each order must be allocated once to any chosen batch
 
+
+
+# heuristic 1
+# 1. randomly choose Q ~ U(2,7) batches to be destroyed from any of the pickers
+# 2. form set of pickers currently assigned to the batches in 1)
+# 3. randomly choose a number of orders up to the maximum batch size of N orders from set in 1) Form a new batch from the chosen orders and assign it to a random worker
+#    from 2) if time constraint can be upheld
+# 4. repeat step 4 until there are no orders left to assign
+# 5. calculate tour costs (distance) using routing algorithm for the new batches and form completition time forecasts for each new picker-batch pair
+ 
+# x <- batch_day
+
+
+sample.vec <- function(x, ...) x[sample(length(x), ...)]
+
+# x$batch_id <- x%>% group_by(batch_id) %>%  group_indices()
+
+heuristic1 <- function(x){
+  
+  Q <- sample(2:7, size = 1)
+  # print(paste0("Q: ", Q))
+  # batches to be destroyed
+  batches_to_be_destroyed <- x %>% sample_n(size = Q)
+  
+  # print(paste0("batches destroyed: ", batches_to_be_destroyed$batch_id))
+  # associated orders
+  
+  # problem starts probably when only new batches are there
+  Od <- orders_day %>% filter(batch_id %in% batches_to_be_destroyed$batch_id) %>% ungroup
+
+  print(paste0("Od: ", Od$order_id))
+  # pickers currently assigned to Od
+  Wd <- Od$picker_id %>%  unique 
+  Wd <-
+  print(paste0("currently assigned picker", Wd))
+  new_batches <- list()
+  i <- 1
+  # randomly choose orders (size and orders are random)
+  # sampleOd$order_id
+  while(nrow(Od) >= 1){
+    new_batch_counter <<- new_batch_counter + 1
+    new_batches[[i]] <- Od %>% sample_n(size=sample(1:nrow(Od), 1))  %>% mutate(batch_id = new_batch_counter)
+    Od <- Od[!Od$order_id %in% new_batches[[i]]$order_id,]
+
+    i <- i + 1
+  }
+  
+  print(new_batches)
+  # aggregate new batches
+  new_part <- bind_rows(new_batches) %>%
+    group_by(batch_id) %>%
+    summarise(
+      nlines =n(),
+      plevel = mean(as.numeric(pick_level)),
+      volume =  sum(volume) * 10e-10,
+      mass = sum(mass / 1000),
+      distance = 2 * rack_distance * max(rack %>% as.numeric) *  10e-4
+    ) %>% 
+    ungroup %>% 
+    mutate(
+           log_nlines = log(nlines),
+           log_distance = log(distance),
+           log_plevel = log(plevel),
+           log_volume = log(volume),
+           log_mass = log(mass)
+    )
+      
+  new_part$picker_id <- sample.vec(Wd, size=nrow(new_part), replace = T)   
+  x <- x %>% filter(!batch_id %in% batches_to_be_destroyed$batch_id) %>% select(colnames(new_part)) %>% bind_rows(new_part)
+  x
+}
 
 # heuristic 3
 # tries to move a set of batches between pickers while leaving the order composition of the batches intact
