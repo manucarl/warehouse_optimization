@@ -18,7 +18,7 @@ rack_distance  <- 10
 # 4. repeat step 4 until there are no orders left to assign
 # 5. calculate tour costs (distance) using routing algorithm for the new batches and form completition time forecasts for each new picker-batch pair
  
-# x <- batch_day
+# x <- batches_of_the_day
 
 
 sample.vec <- function(x, ...) x[sample(length(x), ...)]
@@ -97,13 +97,12 @@ heuristic3 <- function(x) {
     sample_n(1) %>% 
     ungroup 
     
-  shuffled_pickers <-  sample.vec(pickers_of_the_day, size=nrow(xnew), replace = T)
-
+  shuffled_pickers <-  sample(pickers_of_the_day, size=nrow(xnew), replace = T)
+  x[x$batch_id %in% xnew$batch_id,]$picker_id <- shuffled_pickers
+  x
+ 
   
-  length(shuffled_pickers) %>% print
-  length(x$batch_id %in% xnew$batch_id) %>% sum %>% print
-  
-  x %>% mutate(picker_id = replace(picker_id, batch_id %in% xnew$batch_id, shuffled_pickers))
+  # x %>% mutate(picker_id = replace(picker_id, batch_id %in% xnew$batch_id, shuffled_pickers))
   
    # x %>% distinct() %>% 
    #  rows_update(xnew, by = "batch_id") %>% 

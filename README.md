@@ -6,3 +6,7 @@
 2.) VNS
 3.) more complex routing?
 4.) What does greedy heuristc mean?
+
+# other topics to discuss
+
+1.) batching, routing

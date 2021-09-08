@@ -66,12 +66,11 @@ picker_days <- sapply(1:n_part, function(partition_index) {
   
 })
 
-order_data <- all_data %>%
-  gen_order_data %>% 
-  rename()
 
 day <- 1
 
+batch_data_final <- batch_data_final %>% 
+  distinct(batch_id, .keep_all= TRUE)
 
 # use only batches of the day and ??? pickers that are eligible
 batches_of_the_day <- batch_data_final %>%
@@ -145,7 +144,7 @@ n_heuristics <- length(heuristics)
 
 
 
-n_iter <- 200
+n_iter <- 2000
 
 # weights of heuristics w
 # every heuristic has a weight that is influences the probability of being chosen in each iteration
@@ -213,7 +212,7 @@ s_prime <- h_fun(s)
 f_s_prime <- predict(full_model, s_prime, allow.new.levels = allow_new_levels) %>% exp %>% sum
 
 
-# print(c("f_s_prime" = f_s_prime, "f_s" = f_s, "f_s_star"= f_s_star))
+print(c("f_s_prime" = f_s_prime, "f_s" = f_s, "f_s_star"= f_s_star))
 
 Q <- runif(1)
 
