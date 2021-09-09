@@ -1,6 +1,4 @@
 
-# currently only heuristics 3-5 that leave batches intact!
-rack_distance  <- 10
 # BatchGAP
 # goal minimize total execution time (cost) under the constraints
 # 1. each batch is picked at most once
@@ -19,6 +17,8 @@ rack_distance  <- 10
 # 5. calculate tour costs (distance) using routing algorithm for the new batches and form completition time forecasts for each new picker-batch pair
  
 # x <- batches_of_the_day
+
+rack_distance  <- 10
 
 
 sample.vec <- function(x, ...) x[sample(length(x), ...)]
@@ -116,28 +116,58 @@ heuristic3 <- function(x) {
 # first, the picker is selected randomly from all pickers with batches, then each of the selected picker's batches is assigned
 # to other pickers with a greedy heuristic (???)
 heuristic4 <- function(x) {
+  
   pickers <- x$picker_id %>% unique
-  chosen_picker <- sample(x$picker_id, 1) # choose one picker randomly
-  day_pickers <- pickers[!pickers %in% chosen_picker]
-
+  chosen_picker <- sample.vec(pickers, size=1) # choose one picker randomly
+  
+  # use pickers currently involved 
+  # remainin_pickers <- pickers[!pickers == chosen_picker]
+  #or pickers of the day?
+  remaining_pickers <- pickers_of_the_day[pickers_of_the_day != chosen_picker]
+  
   #day_pickers <-  day_pickers[!day_pickers %in% empty_picker_batches$picker_id[1]] # delete picker from picker pool
   
   # 1. forecast each pick above by all remaining pickers
   # 2. sort according to forecast time
   # 3. associate pick with fastest picker continue
   batches <- x %>% filter(picker_id == chosen_picker)
-  # print(batches, n= nrow(batches))
-  
-  
+
+  print(nrow(batches))
+  # problem: the more batches a picker gets, the longer the for loop takes
   # greedy heuristic (i understand greedy here as looping through batches and assigning each batch to fastest picker)
   for(i in 1:nrow(batches)){
     
     # xnew <- data.frame(subset(x[i,], select= -picker_id))
-    batch_preds <- tibble(day_pickers, pred = predict(full_model, cbind(subset(x[i,], select= -picker_id), picker_id = day_pickers))) %>%  arrange(pred)
+    batch_preds <- tibble(picker_id= remaining_pickers, pred = predict(full_model, cbind(subset(x[i,], select= -picker_id), picker_id = remaining_pickers))) %>% 
+      left_join(time_check) %>% 
+      mutate(new_time = pred + total_pred_time) %>% 
+      arrange(pred) %>% 
+      suppressMessages()
    # print(batch_preds)
-    batches[i,]$picker_id <- batch_preds[1,]$day_pickers
     
+    j <- 1
+    new_time <- batch_preds[1,4]
+    while(new_time < M_max){
+      
+      new_time <- batch_preds[j, 4]
+      
+      j <- j + 1
+      
+      print(j)
+    }
+    time_check[time_check$picker_id == chosen_picker,2] <- new_time
+    
+    assign('time_check',time_check, envir=.GlobalEnv)
+    
+    # print(time_check[time_check$picker_id == picker,2])
+    # print(time_check, n = 20)
+    batches$picker_id <-batch_preds[j,]$picker_id
+    
+    # give to the next ELIGIBLE picker:
   }
+  
+  # only solutions that 
+ 
   # print(batches, n= nrow(batches))
   rows_update(x, batches)
   
@@ -154,7 +184,7 @@ heuristic4 <- function(x) {
 heuristic5 <- function(x) {
   
   # picker of which batches are reassigned
-  chosen_picker <- sample(x$picker_id, size = 1)
+  chosen_picker <- sample.vec(x$picker_id, size = 1)
   
 
   # forecast execution times for every remaining picker
@@ -164,7 +194,7 @@ heuristic5 <- function(x) {
     arrange((value))
   
   #give batches of random picker to fastest picker
-  x$picker_id[x$picker_id %in% chosen_picker] <- as.numeric(fastest[1,1])
+  x$picker_id[x$picker_id %in% chosen_picker] <- as.numeric(fastest[1,2])
   x
  }
  

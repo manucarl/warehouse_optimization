@@ -1,39 +1,29 @@
+## ---------------------------
+##
+## Script name: 04_routing_savings_algo_fastest_first_comparison.R
+##
+## Purpose of script: SIMPLE routing heuristic, SIMPLE Clark & Wright savings implementation and comparison of fastest first vs. random assignment
+##
+## Author: Manuel Carlan
+##
+## Date Created: 2021-07-20
+##
+## Copyright (c) Manuel Carlan, 2021
+## Email: mcarlan@uni-goettingen.de
+
+
 library(tidyverse)
 library(lme4)
 
 source("code/preprocessing_functions.R")
-set.seed(42)
 
 load("processed-data/batch_data_final.RData")
 load("processed-data/all_data.RData")
 
-full_model <- lmer(log_batch_time ~ 1+ log_nlines + log_plevel + log_volume + log_mass + log_distance +
-                     (1+ log_nlines + log_plevel + log_volume + log_mass |picker_id),
-                   data = batch_data_final,
-                   control=lmerControl(optimizer="bobyqa",optCtrl=list(maxfun=1e5))
 
-)
+load("processed-data/full_model.RData")
 
-
-summary(full_model)
-
-batch_data_final %>% 
-  ggplot + geom_boxplot(aes(y=batch_time, group=picker_id %>% as.numeric))
-
-batch_data_final %>% 
-  filter(picker_id %in% sample(picker_id, 20)) %>% 
-  group_by(picker_id) %>% 
-  # slice_sample(n=5) %>% 
-  ggplot(aes(x = log_mass , y = log_batch_time, group = picker_id)) +
-  geom_point(color = "cadetblue4", alpha = 0.80) +
-  geom_smooth(method = 'lm', se = FALSE, color = "black") +
-  facet_wrap(~picker_id)
-
-batch_data_final %>% group_by(picker_id) %>% summarize(mean = mean(batch_time))
-
-# save(full_model, file="models/full_model_all_log.RData")
-
-# load("models/full_model_all_log.RData")
+set.seed(42)
 # number of partitions/ virtual days
 n_part <- 12
 # construct virtual days
@@ -41,17 +31,18 @@ partitions <- caret::createFolds(batch_data_final$batch_id, k = n_part)
 
 sapply(partitions, length)
 
+
 # picker qualifies for inclusion in the workforce of the virtual day if both 
 # 1)the sum of real execution times of the batches he or she performed and
 # 2)the sum of the forecast batch execution times 
 #exceed the minimum threshold
 
+# minimum work time per day in mins
 M_min <- 7*60#7.40
+
+# maximum work time per day in mins
 M_max <- 9.5*60
 
-# M_min <- 7.4*3600
-# M_max <- 7.75*3600
-d <- 2
 
 # get eligible pickers for each day
 picker_days <- sapply(1:n_part, function(d) {
@@ -61,11 +52,8 @@ picker_days <- sapply(1:n_part, function(d) {
   
   
   predictions <- predict(full_model, day)
-  # pred <- 0
-  # resids <- day$log_batch_time - pred
-  
-  # pred_corr <- exp(pred)* mean(exp(resids))
-  
+
+
   day <- tibble(day, pred= predictions %>% exp)
   
   day_agg <- day %>% 
@@ -73,11 +61,11 @@ picker_days <- sapply(1:n_part, function(d) {
     summarise(total_secs = sum(batch_time), 
               total_pred_secs = sum(pred))# %>%
   
+  # keep only pickers whose predicted and real total batch execution time is within the limits
   day_keep <- day_agg %>% filter(total_secs > M_min, total_secs < M_max,
                                  total_pred_secs > M_min, total_pred_secs < M_max)
   
-  # left_join(day_keep, picker_productivity) %>% 
-  #   arrange(desc(productivity))
+
   day_keep$picker_id
   
   
@@ -85,29 +73,40 @@ picker_days <- sapply(1:n_part, function(d) {
 
 
 # orders of a day
-# first day:
+# e.g. first day:
 day <- 1
 
-orders_day <- left_join(
-  batch_data_final %>% 
-    slice(partitions[[day]]) %>% 
-    select(batch_id),
-  all_data %>% 
-    gen_order_data %>% 
-    filter(house <46)
-) %>% 
-  arrange(desc(rack)) %>% 
-  filter(rack > 0) %>% 
+batches_of_the_day <- batch_data_final %>%
+  slice(partitions[[day]]) %>% 
+  filter(picker_id %in% picker_days[[day]])
+
+orders_of_the_day <- all_data %>% 
+  dplyr::select(LFDNR,AUFTRAGSNR,MDENR, ANFAHR_ZEIT, BEGINN_ZEIT, mass, MENGE_IST, volume, pick_level, area, rack, line, place, house, line) %>%
+  drop_na(volume) %>%
   mutate(pick_end = lubridate::period_to_seconds(lubridate::hms(ANFAHR_ZEIT)),
          pick_start = lubridate::period_to_seconds(lubridate::hms(BEGINN_ZEIT)),
-         rack = as.numeric(rack))
+         rack = as.numeric(rack)) %>% 
+  rename(picker_id = MDENR, 
+         batch_id = AUFTRAGSNR,
+         order_id = LFDNR) %>% 
 
+  filter(batch_id %in% batches_of_the_day$batch_id) %>% 
+  rename(plevel = pick_level) %>% 
+  select(batch_id, order_id, picker_id, volume, mass, plevel, rack, line, place)
 
 
 # randomly sample n orders
-order_sample <- orders_day %>% 
+order_sample <- orders_of_the_day %>% 
   sample_n(200) %>% 
-  select(order_id, batch_id, rack:line, mass)
+  select(order_id, batch_id, rack:line, mass, place)
+
+
+
+
+#----------------------------------------------------------------------------------------------------------------------
+# simple routing heuristic for depot at rack = 01 and universal drop off locations (the whole left part of the warehouse)
+# so that Dijkstra is no needed
+#----------------------------------------------------------------------------------------------------------------------
 
 
 # odd rack numbers are up - down, even rack numbers are down - up
@@ -121,7 +120,7 @@ vs <- lapply(unique(order_sample$rack), function(i){
   order_sample <- order_sample %>% 
     arrange(rack)
   v <-  order_sample %>% filter(rack == i) %>%
-    dplyr::select(order_id, batch_id, rack, place, house) %>%
+    dplyr::select(order_id, batch_id, rack, place) %>%
     arrange(sort_fun(place)) # 3)sort each aisle vector v according to the travel direction of the aisle
   v
 }
@@ -146,12 +145,8 @@ route1 <- find_route(order_sample[1,])
 # route for another order
 route2 <- find_route(order_sample[2,])
 
-
+# combined route of two orders
 route12 <- find_route(order_sample[1:2,])
-
-
-
-
 
 
 
@@ -172,7 +167,7 @@ calculate_distance(route1) + calculate_distance(route2) - calculate_distance(rou
 calculate_distance(route1)
 
 
-
+# calculates savings for two routes as input
 calculate_savings <- function(route1, route2, start="01", end = "01"){
 
   # input: 2 route dfs with 3 rows (start, rack, end)
@@ -182,6 +177,7 @@ calculate_savings <- function(route1, route2, start="01", end = "01"){
   calculate_distance(route)
 }
 
+# calculates savings for a vector of two rack indices
 calculate_savings_rack <- function(racks, start=1, end = 1){
   
 
@@ -192,21 +188,22 @@ calculate_savings_rack <- function(racks, start=1, end = 1){
 
 calculate_savings_rack(c(route1$rack[2], route2$rack[2]))
 
-order_sample
+
 find_route(order_sample)
+find_route(orders_of_the_day)
 
 
-find_route(orders_day)
-
+# savings matrix
 savings_matrix <- outer(2:99, 2:99, FUN = function(X, Y) apply(cbind(X, Y), 1, calculate_savings_rack))
 savings_matrix[t(lower.tri(savings_matrix, diag=T))] <- 0
 savings_matrix
 
+
+
+
 #--------------------------------------------------------------------------------------------------------
 # savings algo
 #--------------------------------------------------------------------------------------------------------
-
-
 # savings algorithm: sort savings and combine with biggest savings. for us, this means that
 # 1. start with orders in aisle with biggest number (farest away from depot) and combine them into batch until capacity is reached.
 # 2. If capacity is not reached, merge with orders in clostes aisle etc.
@@ -218,9 +215,9 @@ ind <- 1
 acc_mass <- 0
 
 breaks <- NULL
-for(i in 1:nrow(orders_day)){
+for(i in 1:nrow(orders_of_the_day)){
   
-  acc_mass <- acc_mass + orders_day[i,]$mass/1000
+  acc_mass <- acc_mass + orders_of_the_day[i,]$mass/1000
   if(acc_mass >= capacity){
     breaks <- c(breaks, i)
     acc_mass <- 0
@@ -228,31 +225,32 @@ for(i in 1:nrow(orders_day)){
 }
 
 # use lagged indices
-diffs <- diff(c(1, breaks, nrow(orders_day)+1))
+diffs <- diff(c(1, breaks, nrow(orders_of_the_day)+1))
 
 # attribute new batch ids
-new_orders_day <- orders_day
-new_orders_day$batch_id <- rep(1:(length(breaks) + 1), times=diffs)
+new_orders_of_the_day <- orders_of_the_day
+new_orders_of_the_day$batch_id <- rep(1:(length(breaks) + 1), times=diffs)
 
 # aggregate new batches
 rack_distance <- 10
-new_batches_day <- new_orders_day %>% 
+
+new_batches_day <- new_orders_of_the_day %>% 
   group_by(batch_id) %>%
   summarise(
-    no_of_lines =n(),
-    travel_dist_meter = 2 * rack_distance * max(rack %>% as.numeric),
-    mean_pick_level = mean(as.numeric(pick_level)),
-    total_volume = sum(volume/10e8),
-    total_mass_kg = sum(mass/1000)
+    nlines =n(),
+    distance = 2 * rack_distance * max(rack %>% as.numeric),
+    plevel = mean(as.numeric(plevel)),
+    volume = sum(volume/10e8),
+    mass = sum(mass/1000)
   ) %>% 
   ungroup %>% 
-  arrange(desc(no_of_lines)) %>% 
+  arrange(desc(nlines)) %>% 
   mutate(
-         log_nlines = log(no_of_lines),
-         log_distance = log(travel_dist_meter ),
-         log_plevel = log(mean_pick_level),
-         log_volume = log(total_volume),
-         log_mass = log(total_mass_kg)
+         log_nlines = log(nlines),
+         log_distance = log(distance ),
+         log_plevel = log(plevel),
+         log_volume = log(volume),
+         log_mass = log(mass)
   ) %>% 
   drop_na 
   
@@ -273,25 +271,21 @@ random_batch$picker_id <- sample(picker_productivity$picker_id, nrow(new_batches
 
 random_batch$batch_times <- predict(full_model, random_batch) %>%  exp
 
+random_batch$batch_times %>% sum
 
-
-random_batch$batch_times <- predict(full_model, random_batch) %>%  exp %>% sum
-
-# batch time for random assignment
-predict(full_model, random_batch) %>%  exp %>% sum
-predict(full_model,)
 
 # batch time if specific picker handled all batches (sorted by productivity)
 times_ff <- sapply(picker_productivity$picker_id, function(x) predict(full_model, new_batches_day %>%  mutate(picker_id = x)) %>%  exp %>% sum)
 times_random <- sapply(sample(picker_productivity$picker_id), function(x) predict(full_model, new_batches_day %>%  mutate(picker_id = x)) %>%  exp %>% sum)
 
 
-tibble(times_ff = times_ff, times_random = times_random, picker = 1:length(ff)) %>% 
+tibble("fastest first" = times_ff, "random" = times_random, picker = 1:length(times_ff)) %>% 
   pivot_longer(cols=-picker) %>% 
   ggplot(aes(x=picker, y=value)) +
-  facet_grid(~name)+
+  facet_wrap(~name)+
   geom_point() +
   stat_smooth(method = "lm", col = "red") + 
-  ylab("total execution time (if respective picker executed all batches)")
+  ylab("total execution time (if respective picker executed all batches)") +
+  ggtitle("batch execution times: fastest first vs. random assignment (pickers are sorted according to productivity in the left panel)")
 
-
+# ggsave(filename="figures/fastest_first_vs_random_assignment.png")

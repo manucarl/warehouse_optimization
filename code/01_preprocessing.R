@@ -1,3 +1,21 @@
+## ---------------------------
+##
+## Script name: 01_preprocessing.R
+##
+## Purpose of script: aggregates order pick data on batch level
+##
+## Author: Manuel Carlan
+##
+## Date Created: 2021-04-12
+##
+## Copyright (c) Manuel Carlan, 2021
+## Email: mcarlan@uni-goettingen.de
+
+# Tasks:
+# 1.) merges pick with article data
+# 2.) aggregates merged data on batch level for multilevel model
+# 3.) cleans, transforms and renames used variables
+
 library(readxl)
 library(tidyverse)
 library(vctrs)
@@ -122,7 +140,6 @@ dim(all_data)
 #-------------------------------------------------------------------------------------
 # data transformation - from order to batch level
 #-------------------------------------------------------------------------------------
-
 
 source("code/preprocessing_functions.R")
 

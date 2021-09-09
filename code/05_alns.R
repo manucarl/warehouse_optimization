@@ -1,3 +1,22 @@
+## ---------------------------
+##
+## Script name: 05_alns.R
+##
+## Purpose of script: executes adaptive large neighborhood search algorithm for optimization of batch execution times in a warehouse
+##
+## Author: Manuel Carlan
+##
+## Date Created: 2021-07-11
+##
+## Copyright (c) Manuel Carlan, 2021
+## Email: mcarlan@uni-goettingen.de
+
+# tasks:
+
+# 1) imports/estimates "best" model for prediction of batch execution times
+# 2) creates 12 folds of batch data and creates 12 virtual days of batches that are executed by a set of pickers that fulfil minimum and maximum working time requirements (real and predicted)
+# 3) executes ALSN algorithm as described in matusiak et al. (2017)
+
 library(tidyverse)
 library(lme4)
 
@@ -6,6 +25,7 @@ set.seed(42)
 
 load("processed-data/batch_data_final.RData")
 load("processed-data/all_data.RData")
+
 
 full_model <- lmer(log_batch_time ~ 1+ log_nlines + log_plevel + log_volume + log_mass + log_distance +
                      (1+ log_nlines + log_plevel + log_volume + log_mass |picker_id),
@@ -70,26 +90,8 @@ picker_days <- sapply(1:n_part, function(partition_index) {
 day <- 1
 
 batch_data_final <- batch_data_final %>% 
-  distinct(batch_id, .keep_all= TRUE)
+  distinct(batch_id, .keep_all= TRUE) 
 
-# use only batches of the day and ??? pickers that are eligible
-batches_of_the_day <- batch_data_final %>%
-  slice(partitions[[day]])
-# %>% 
-#   filter(picker_id %in% picker_days[[day]])
-
-orders_of_the_day <- order_data %>% 
-  filter(batch_id %in% batches_of_the_day$batch_id) %>% 
-  rename(plevel = pick_level) %>% 
-  select(batch_id, order_id, picker_id, volume, mass, rack)
-
-pickers_of_the_day <- picker_days[[day]]
-# maximum number of orders per batch
-N <- 50
-
-# orders_of_the_day <- orders_of_the_day %>% 
-#   group_by(batch_id) %>% 
-#   sample_n(sample( 2:N , size=1)) 
 
 # 5 different heuristics
 # each heuristics is composed of a destroy and repair method
@@ -122,6 +124,28 @@ N <- 50
 # phi <- 0.999995
 # 
 
+
+
+# use only batches of the day and ??? pickers that are eligible
+batches_of_the_day <- batch_data_final %>%
+  slice(partitions[[day]]) %>% 
+  filter(picker_id %in% picker_days[[day]])
+
+orders_of_the_day <- all_data %>% gen_order_data %>% 
+  filter(batch_id %in% batches_of_the_day$batch_id) %>% 
+  rename(plevel = pick_level) %>% 
+  select(batch_id, order_id, picker_id, volume, mass, rack)
+
+pickers_of_the_day <- picker_days[[day]]
+# maximum number of orders per batch
+N <- 50
+
+
+
+time_check <- tibble(batches_of_the_day, pred_time = predict(full_model, batches_of_the_day) %>% exp) %>% 
+  group_by(picker_id) %>% 
+  summarise(total_pred_time = sum(pred_time))
+
 # 2nd option
 rho1 <- 65
 rho2 <- 13
@@ -137,14 +161,14 @@ source("code/heuristics.R")
 heuristics <- c(heuristic1, heuristic3, heuristic4, heuristic5)
 
 
-heuristics <- c(heuristic3)
+heuristics <- c(heuristic3, heuristic5)
 
 # no of heuristics used
 n_heuristics <- length(heuristics)
 
 
 
-n_iter <- 2000
+n_iter <- 200
 
 # weights of heuristics w
 # every heuristic has a weight that is influences the probability of being chosen in each iteration
@@ -188,6 +212,8 @@ it <- 1
 
 new_batch_counter <- 0
 
+
+tic()
 for(it in 1:n_iter){
   
 
@@ -207,6 +233,7 @@ h_fun <- heuristics[[h]]
 
 # new solution via application of chosen heuristic
 s_prime <- h_fun(s)
+
 
 # cost of new solution
 f_s_prime <- predict(full_model, s_prime, allow.new.levels = allow_new_levels) %>% exp %>% sum
@@ -251,8 +278,11 @@ ws[h] <- lambda*ws[h] + (1-lambda)*phis[h]
 
 temp <- phi*temp
 
+
+
 }
 
+toc()
 f_s_star /
 predict(full_model, batches_of_the_day) %>% exp %>% sum
 # heuristic3(batch_day)
