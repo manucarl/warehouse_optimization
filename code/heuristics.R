@@ -1,3 +1,15 @@
+## ---------------------------
+##
+## Script name: heuristics.R
+##
+## Purpose of script: heuristics 1 - 5 for ALNS from matusiak et al. (2017)
+##
+## Author: Manuel Carlan
+##
+## Date Created: 2021-07-12
+##
+## Copyright (c) Manuel Carlan, 2021
+## Email: mcarlan@uni-goettingen.de
 
 # BatchGAP
 # goal minimize total execution time (cost) under the constraints
