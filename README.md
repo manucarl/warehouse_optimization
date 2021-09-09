@@ -3,6 +3,8 @@
 #  topics to discuss
 
 1) abandon VNS in favor of an addition to the model? my interpretation of savings algo
+![](figures/matusiak_algo_comp.png)
+
 2) simple routing heuristic (our orders do not have own unique drop-off locations)
 ![](figures/matusiak_warehouse.png)
 3) ALNS: What does greedy heuristc mean? (p.16) used in heuristic 4; currently I predict execution time for every batch for all pickers and assign the respective fastest picker (very slow); 
