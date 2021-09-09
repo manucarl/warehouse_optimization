@@ -13,7 +13,7 @@ a comparison, virtual days are constructed by partitioning the data of 24,669 ba
 equally sized subsets. Each partition forms one virtual day, resulting in approximately 2056 orders (685
 batches) per day." distinction between *order lines* and *orders*?
 7) ALNS: score for predicted total batch execution times per picker. right now: algorithm runs until batches are distributed among 2-4 best pickers but maximum execution time limit per picker is not upheld; what happens when a picker's time limit is exceeded? Matusiak et al: "The total execution time of all the batches executed by a picker should not exceed the
-maximum threshold time $M_{max}$. If adding a batch were to exceed this threshold, it would be discarded"
+maximum threshold time M_max. If adding a batch were to exceed this threshold, it would be discarded"
 for this picker."
 
 # tbd
