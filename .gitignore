@@ -41,3 +41,4 @@ vignettes/*.pdf
 raw-data
 processed-data
 papers
+code/storage
